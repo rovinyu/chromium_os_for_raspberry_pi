@@ -2,9 +2,7 @@
 # Distributed under the terms of the GNU General Public License v2
 # $Header: /var/cvsroot/gentoo-x86/media-libs/mesa/mesa-7.9.ebuild,v 1.3 2010/12/05 17:19:14 arfrever Exp $
 
-EAPI=6
-
-MESON_AUTO_DEPEND=no
+EAPI=7
 
 EGIT_REPO_URI="git://anongit.freedesktop.org/mesa/mesa"
 CROS_WORKON_PROJECT="chromiumos/third_party/mesa"
@@ -15,7 +13,7 @@ if [[ ${PV} = 9999* ]]; then
 	EXPERIMENTAL="true"
 fi
 
-inherit base multilib flag-o-matic meson toolchain-funcs ${GIT_ECLASS} cros-workon
+inherit base flag-o-matic meson toolchain-funcs ${GIT_ECLASS} cros-workon
 
 FOLDER="${PV/_rc*/}"
 [[ ${PV/_rc*/} == ${PV} ]] || FOLDER+="/RC"
@@ -35,51 +33,55 @@ fi
 # ralloc is LGPL-3
 # GLES[2]/gl[2]{,ext,platform}.h are SGI-B-2.0
 LICENSE="MIT LGPL-3 SGI-B-2.0"
-SLOT="0"
 KEYWORDS="~*"
 
 INTEL_CARDS="intel"
 RADEON_CARDS="amdgpu radeon"
-VIDEO_CARDS="${INTEL_CARDS} ${RADEON_CARDS} freedreno llvmpipe mach64 mga nouveau r128 radeonsi savage sis softpipe tdfx via virgl vmware vc4"
+VIDEO_CARDS="${INTEL_CARDS} ${RADEON_CARDS} freedreno llvmpipe mach64 mga nouveau r128 radeonsi savage sis softpipe tdfx via virgl vmware vc4 v3d"
 for card in ${VIDEO_CARDS}; do
 	IUSE_VIDEO_CARDS+=" video_cards_${card}"
 done
 
 IUSE="${IUSE_VIDEO_CARDS}
 	+classic debug dri drm egl +gallium -gbm gles1 gles2 kernel_FreeBSD
-	kvm_guest llvm +nptl pic selinux shared-glapi vulkan wayland xlib-glx X"
+	kvm_guest llvm +nptl pic selinux shared-glapi +vulkan wayland xlib-glx X"
 
-LIBDRM_DEPSTRING=">=x11-libs/libdrm-2.4.60"
+LIBDRM_DEPSTRING=">=x11-libs/libdrm-2.4.60:="
 
 REQUIRED_USE="video_cards_amdgpu? ( llvm )
 	video_cards_llvmpipe? ( llvm )"
 
-# keep correct libdrm and dri2proto dep
-# keep blocks in rdepend for binpkg
-RDEPEND="
+COMMON_DEPEND="
+	dev-libs/expat:=
+	dev-libs/libgcrypt:=
+	llvm? ( sys-devel/llvm:= )
+	llvm? ( virtual/libelf:= )
+	virtual/udev:=
 	X? (
-		!<x11-base/xorg-server-1.7
-		>=x11-libs/libX11-1.3.99.901
-		x11-libs/libXdamage
-		x11-libs/libXext
-		x11-libs/libXrandr
-		x11-libs/libXxf86vm
+		!<x11-base/xorg-server-1.7:=
+		>=x11-libs/libX11-1.3.99.901:=
+		x11-libs/libXdamage:=
+		x11-libs/libXext:=
+		x11-libs/libXrandr:=
+		x11-libs/libxshmfence:=
+		x11-libs/libXxf86vm:=
 	)
-	llvm? ( virtual/libelf )
-	dev-libs/expat
-	dev-libs/libgcrypt
-	virtual/udev
 	${LIBDRM_DEPSTRING}
 "
 
-DEPEND="${RDEPEND}
-	dev-libs/libxml2
+RDEPEND="${COMMON_DEPEND}
+"
+
+DEPEND="${COMMON_DEPEND}
+	dev-libs/libxml2:=
+	x11-base/xorg-proto:=
+	wayland? ( >=dev-libs/wayland-protocols-1.8:= )
+"
+
+BDEPEND="
+	virtual/pkgconfig
 	sys-devel/bison
 	sys-devel/flex
-	virtual/pkgconfig
-	x11-base/xorg-proto
-	wayland? ( >=dev-libs/wayland-protocols-1.8 )
-	llvm? ( sys-devel/llvm )
 "
 
 driver_list() {
@@ -102,12 +104,6 @@ src_prepare() {
 			configure.ac || die
 	fi
 
-	# Don't apply intel BGRA internal format patch for VM build since BGRA_EXT is not a valid
-	# internal format for GL context.
-	if use !video_cards_virgl; then
-		epatch "${FILESDIR}"/DOWNSTREAM-i965-Use-GL_BGRA_EXT-internal-format-for-B8G8R8A8-B8.patch
-	fi
-
 	# Produce a dummy git_sha1.h file because .git will not be copied to portage tmp directory
 	echo '#define MESA_GIT_SHA1 "git-0000000"' > src/git_sha1.h
 	default
@@ -116,9 +112,7 @@ src_prepare() {
 src_configure() {
 	tc-getPROG PKG_CONFIG pkg-config
 
-	# Needs std=gnu++11 to build with libc++. crbug.com/750831
-	append-cxxflags "-std=gnu++11"
-
+	cros_optimize_package_for_speed
 	# For llvmpipe on ARM we'll get errors about being unable to resolve
 	# "__aeabi_unwind_cpp_pr1" if we don't include this flag; seems wise
 	# to include it for all platforms though.
@@ -152,6 +146,7 @@ src_configure() {
 
 		gallium_enable video_cards_virgl virgl
     gallium_enable video_cards_vc4 vc4
+    gallium_enable video_cards_v3d v3d
 	fi
 
 	if use vulkan; then
@@ -189,8 +184,6 @@ src_configure() {
 		glx="disabled"
 	fi
 
-	append-flags "-UENABLE_SHADER_CACHE"
-
 	if use kvm_guest; then
 		emesonargs+=( -Ddri-search-path=/opt/google/cros-containers/lib )
 	fi
@@ -199,6 +192,7 @@ src_configure() {
 		-Dglx="${glx}"
 		-Dllvm="${LLVM_ENABLE}"
 		-Dplatforms="${egl_platforms}"
+		-Dshader-cache=false
 		$(meson_use egl)
 		$(meson_use gbm)
 		$(meson_use X gl)
@@ -224,7 +218,7 @@ src_install() {
 	insinto "/usr/$(get_libdir)/dri/"
 	insopts -m0755
 	# install the gallium drivers we use
-	local gallium_drivers_files=( nouveau_dri.so r300_dri.so r600_dri.so msm_dri.so swrast_dri.so vc4_dri.so )
+	local gallium_drivers_files=( nouveau_dri.so r300_dri.so r600_dri.so msm_dri.so swrast_dri.so vc4_dri.so v3d_dri.so )
 	for x in ${gallium_drivers_files[@]}; do
 		if [ -f "${S}/$(get_libdir)/gallium/${x}" ]; then
 			doins "${S}/$(get_libdir)/gallium/${x}"

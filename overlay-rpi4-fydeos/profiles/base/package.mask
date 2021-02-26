@@ -1,0 +1,8 @@
+chromeos-base/auto-expand-partition::fydeos
+virtual/chromeos-bsp::fydeos
+sys-kernel/linux-firmware::patches
+media-libs/minigbm::patches
+chromeos-base/cros-disks::patches
+chromeos-base/vm_host_tools::patches
+chromeos-base/chromeos-init::patches
+chromeos-base/chromeos-init::chromiumos

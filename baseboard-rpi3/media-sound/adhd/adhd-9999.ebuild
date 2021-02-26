@@ -2,115 +2,86 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-EAPI=4
+EAPI=7
 CROS_WORKON_PROJECT="chromiumos/third_party/adhd"
 CROS_WORKON_LOCALNAME="adhd"
 CROS_WORKON_USE_VCSID=1
 
-# Note: Do *NOT* add any more boards to this list.  Files should be installed
-# via bsp packages now, or configured via unibuild config settings.
-CROS_BOARDS=(
-	bolt
-	chell
-	cid
-	cyan
-	daisy
-	daisy_skate
-	daisy_spring
-	falco
-	gandof
-	glados
-	jecht
-	leon
-	link
-	lulu
-	mccloud
-	monroe
-	panther
-	peppy
-	rikku
-	stout
-	strago
-	tidus
-	tricky
-	veyron_{fievel,jaq,jerry,jerry-kernelnext,mickey,mighty,minnie,minnie-kernelnext,speedy,tiger}
-	whirlwind
-	wolf
-	zako
-)
-
-inherit toolchain-funcs autotools cros-sanitizers cros-workon cros-board systemd user libchrome-version
+inherit toolchain-funcs autotools cros-fuzzer cros-sanitizers cros-workon systemd user libchrome-version
 
 DESCRIPTION="Google A/V Daemon"
-HOMEPAGE="http://www.chromium.org"
+HOMEPAGE="https://chromium.googlesource.com/chromiumos/third_party/adhd/"
 SRC_URI=""
 LICENSE="BSD-Google"
-SLOT="0"
 KEYWORDS="~*"
-IUSE="asan +cras-apm selinux systemd unibuild"
+IUSE="asan +cras-apm fuzzer generated_cros_config selinux systemd unibuild"
 
-RDEPEND=">=media-libs/alsa-lib-1.0.27
-	!<media-libs/alsa-lib-1.1.6-r3
+COMMON_DEPEND="
+	>=chromeos-base/metrics-0.0.1-r3152:=
+	dev-libs/iniparser:=
+	cras-apm? ( media-libs/webrtc-apm:= )
+	>=media-libs/alsa-lib-1.1.6-r3:=
+	media-libs/ladspa-sdk:=
+	media-libs/sbc:=
+	media-libs/speex:=
+	>=sys-apps/dbus-1.4.12:=
+	selinux? ( sys-libs/libselinux:= )
+	virtual/udev:=
+"
+
+RDEPEND="
+	${COMMON_DEPEND}
 	media-sound/alsa-utils
 	media-plugins/alsa-plugins
-	media-libs/sbc
-	media-libs/speex
-	cras-apm? ( media-libs/webrtc-apm )
-	dev-libs/iniparser
-	>=sys-apps/dbus-1.4.12
-	dev-libs/libpthread-stubs
-	virtual/udev
-	unibuild? ( chromeos-base/chromeos-config )
-	!<=chromeos-base/audioconfig-0.0.1-r1
-	chromeos-base/chromeos-config-tools
-	chromeos-base/metrics
-	selinux? ( sys-libs/libselinux )"
-DEPEND="${RDEPEND}
-	media-libs/ladspa-sdk"
-
-check_format_error() {
-	local dir
-	local file
-	local files_need_format=()
-	local target_dirs=(
-		"cras/examples"
-		"cras/src/libcras"
+	unibuild? (
+		!generated_cros_config? ( chromeos-base/chromeos-config )
+		generated_cros_config? ( chromeos-base/chromeos-config-bsp )
 	)
-	for dir in "${target_dirs[@]}"; do
-		for file in "${dir}"/*.{c,cc,h}; do
-			[[ -e "${file}" ]] || continue
-			clang-format -style=file "${file}" | cmp -s "${file}"
-			[[ $? == 0 ]] || files_need_format+=( "${file}" )
-		done
-	done
-	if [[ "${#files_need_format[@]}" != "0" ]]; then
-		ewarn "The following files have formmating errors:"
-		ewarn "${files_need_format[*]}"
-		return 1
-	fi
-	return 0
-}
+	chromeos-base/chromeos-config-tools
+"
+
+DEPEND="
+	${COMMON_DEPEND}
+	dev-libs/libpthread-stubs:=
+	media-sound/cras_rust:=
+"
 
 src_prepare() {
 	cd cras
 	eautoreconf
+	default
 }
 
 src_configure() {
+	cros_optimize_package_for_speed
 	sanitizers-setup-env
+	if use amd64 ; then
+		export FUZZER_LDFLAGS="-fsanitize=fuzzer"
+	fi
+
 	cd cras
-	cros-workon_src_configure $(use_enable selinux) \
-		$(use_enable cras-apm webrtc-apm) \
-		--enable-metrics
+	# Disable external libraries for fuzzers.
+	if use fuzzer ; then
+		# Disable "gc-sections" for fuzzer builds, https://crbug.com/1026125 .
+		append-ldflags "-Wl,--no-gc-sections"
+		econf $(use_enable cras-apm webrtc-apm) \
+			--with-system-cras-rust \
+			$(use_enable amd64 fuzzer)
+	else
+		econf $(use_enable selinux) \
+			$(use_enable cras-apm webrtc-apm) \
+			--enable-metrics \
+			--with-system-cras-rust \
+			$(use_enable amd64 fuzzer) \
+			BASE_VER="$(libchrome_ver)"
+	fi
 }
 
 src_compile() {
-	local board=$(get_current_board_with_variant)
-	emake BOARD=${board} CC="$(tc-getCC)" || die "Unable to build ADHD"
+	emake CC="$(tc-getCC)" || die "Unable to build ADHD"
 }
 
 src_test() {
-	check_format_error || ewarn "Should fail because of format errors"
 	if ! use x86 && ! use amd64 ; then
 		elog "Skipping unit tests on non-x86 platform"
 	else
@@ -122,58 +93,14 @@ src_test() {
 }
 
 src_install() {
-	local board=$(get_current_board_with_variant)
-	# Get board name without variant E.g.
-	# get daisy from daisy_spring,
-	local board_no_variant=$(get_current_board_no_variant)
-	# Search the boards that are relevant to this board. E.g.
-	# for daisy_spring, search in this order:
-	# daisy_spring, daisy to find the files.
-	local board_all=( ${board} ${board_no_variant} )
-	emake BOARD=${board} DESTDIR="${D}" SYSTEMD=$(usex systemd) install
+	emake DESTDIR="${D}" SYSTEMD="$(usex systemd)" install
 
-	# install alsa config files
-	insinto /etc/modprobe.d
-	local b
-	for b in "${board_all[@]}" ; do
-		local alsa_conf=alsa-module-config/alsa-${b}.conf
-		if [[ -f ${alsa_conf} ]] ; then
-			doins ${alsa_conf}
-			break
-		fi
-	done
-
-	# install alsa patch files
-	insinto /lib/firmware
-	for b in "${board_all[@]}" ; do
-		local alsa_patch=alsa-module-config/${b}_alsa.fw
-		if [[ -f ${alsa_patch} ]] ; then
-			doins ${alsa_patch}
-			break
-		fi
-	done
-
-	# install ucm config files
-	insinto /usr/share/alsa/ucm
-	local board_dir
-	for board_dir in "${board_all[@]}" ; do
-		if [[ -d ucm-config/${board_dir} ]] ; then
-			doins -r ucm-config/${board_dir}/*
-			break
-		fi
-	done
 	# install common ucm config files.
+	insinto /usr/share/alsa/ucm
 	doins -r ucm-config/for_all_boards/*
 
-	# install cras config files
-	insinto /etc/cras
-	for board_dir in "${board_all[@]}" ; do
-		if [[ -d cras-config/${board_dir} ]] ; then
-			doins -r cras-config/${board_dir}/*
-			break
-		fi
-	done
 	# install common cras config files.
+	insinto /etc/cras
 	doins -r cras-config/for_all_boards/*
 
 	# install dbus config allowing cras access
@@ -187,8 +114,16 @@ src_install() {
 	# Install asound.conf for CRAS alsa plugin
 	insinto /etc
 	doins "${FILESDIR}"/asound.conf
-  insinto /etc/init
-  doins ${FILESDIR}/cras_monitor.conf
+
+	if use fuzzer ; then
+		# Install example dsp.ini file for fuzzer
+		insinto /etc/cras
+		doins cras-config/dsp.ini.sample
+		# Install fuzzer binary
+		fuzzer_install "${S}/OWNERS.fuzz" cras/src/cras_rclient_message_fuzzer
+		fuzzer_install "${S}/OWNERS.fuzz" cras/src/cras_hfp_slc_fuzzer \
+			--dict "${S}/cras/src/fuzz/cras_hfp_slc.dict"
+	fi
 }
 
 pkg_preinst() {

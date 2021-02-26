@@ -1,19 +1,27 @@
-# Copyright (c) 2018 The Fyde OS Authors. All rights reserved.
-# Distributed under the terms of the BSD
+# Copyright (c) 2020 The Fyde Innovations. All rights reserved.
+# Distributed under the license specified in the root directory of this project.
 
 EAPI="5"
 
-DESCRIPTION="empty project"
-HOMEPAGE="http://fydeos.com"
+DESCRIPTION="Baseboard BSP definition"
+HOMEPAGE="https://fydeos.io"
 
-LICENSE="BSD-Google"
+LICENSE="BSD"
 SLOT="0"
 KEYWORDS="*"
-IUSE="+kiosk_demo"
+IUSE=""
 
 RDEPEND="
-  kiosk_demo? ( chromeos-base/fyde-kiosk-demo
-                chromeos-base/power_wash_command )
+  chromeos-base/rpi-boot-bin
+  chromeos-base/rpi-firmware
+  sys-apps/haveged
 "
 
 DEPEND="${RDEPEND}"
+
+S=$WORKDIR
+
+src_install() {
+  insinto /etc/init
+  doins ${FILESDIR}/powerd/never-suspend.conf
+}

@@ -1,24 +1,18 @@
-# Copyright (c) 2019 The Fyde OS Authors. All rights reserved.
-# Distributed under the terms of the BSD
+# Copyright (c) 2020 The Fyde Innovations. All rights reserved.
+# Distributed under the license specified in the root directory of this project.
 
 EAPI="5"
 inherit udev
-DESCRIPTION="drivers, config files for rpi3"
-HOMEPAGE="http://fydeos.com"
+DESCRIPTION="drivers, config files for Raspberry Pi 4"
+HOMEPAGE="https://fydeos.io"
 
-LICENSE="BSD-Google"
+LICENSE="BSD"
 SLOT="0"
 KEYWORDS="*"
 IUSE=""
 
 RDEPEND="
-    chromeos-base/rpi-boot-bin
-    chromeos-base/auto-expand-partition
     chromeos-base/device-appid
-    chromeos-base/rpi-firmware
-    chromeos-base/snd_bcm2835-spec
-    chromeos-base/libwidevine
-    sys-apps/haveged
 "
 
 DEPEND="${RDEPEND}"
@@ -30,7 +24,9 @@ src_install() {
   insinto /etc/init
   doins "${FILESDIR}/bt/bluetooth_uart.conf"
   doins "${FILESDIR}/bt/console-ttyAMA0.override"
-  doins "${FILESDIR}/audio/force_audio_output_to_headphones.conf"
+  doins "${FILESDIR}"/audio/rpi4-hdmi.conf
   insinto /firmware/rpi
   doins "${FILESDIR}/kernel-config"/*
+  exeinto /usr/share/cros/init
+  doexe "${FILESDIR}"/audio/set-hdmi.sh
 }

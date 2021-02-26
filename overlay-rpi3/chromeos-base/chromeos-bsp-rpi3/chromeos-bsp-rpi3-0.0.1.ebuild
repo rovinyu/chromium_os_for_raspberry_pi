@@ -1,23 +1,19 @@
-# Copyright (c) 2018 The Fyde OS Authors. All rights reserved.
-# Distributed under the terms of the BSD
+# Copyright (c) 2020 The Fyde Innovations. All rights reserved.
+# Distributed under the license specified in the root directory of this project.
 
 EAPI="5"
 inherit udev
 DESCRIPTION="drivers, config files for rpi3"
-HOMEPAGE="http://fydeos.com"
+HOMEPAGE="https://fydeos.io"
 
-LICENSE="BSD-Google"
+LICENSE="BSD"
 SLOT="0"
 KEYWORDS="*"
 IUSE=""
 
 RDEPEND="
-    chromeos-base/rpi-boot-bin
-    chromeos-base/rpi-firmware
-    chromeos-base/auto-expand-partition
     chromeos-base/device-appid
-    sys-apps/haveged
-    chromeos-base/libwidevine
+    chromeos-base/snd_bcm2835-spec
 "
 
 DEPEND="${RDEPEND}"
@@ -29,7 +25,10 @@ src_install() {
   insinto /etc/init
   doins "${FILESDIR}/bt/bluetooth_uart.conf"
   doins "${FILESDIR}/bt/console-ttyAMA0.override"
-  doins "${FILESDIR}/audio/force_audio_output_to_headphones.conf"
+  #doins "${FILESDIR}/audio/force_audio_output_to_headphones.conf"
+  insinto /usr/share/alsa/ucm
+  doins -r ${FILESDIR}/audio/bcm2835\ ALSA
+  doins -r ${FILESDIR}/audio/vc4-hdmi
   insinto /firmware/rpi
   doins "${FILESDIR}/kernel-config"/*.txt
 }
